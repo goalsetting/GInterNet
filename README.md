@@ -2,7 +2,7 @@
 ## Sample data
 NUS-WIDE
 ## Demo task
-Multi-view node classification task
+Multi-view node classification
 ## Configuration file
 herconfig.yaml
 ## Run
