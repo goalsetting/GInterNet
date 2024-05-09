@@ -8,43 +8,6 @@ import networkx as nx
 import pickle as pkl
 import math
 
-def sigmoid(x):
-    return 1 / (1 + torch.exp(-x))
-#这个函数为辅助韩书记和，比如读边，读数据
-
-def Build_ADJ(data):
-    adj = sp.coo_matrix((np.ones(data.num_edges), (data.edge_index[0], data.edge_index[1])),
-                        shape=(data.num_nodes, data.num_nodes),
-                        dtype=np.float32)
-    adj_ori = torch.Tensor(adj.toarray())
-    adj = adj + adj.T.multiply(adj.T > adj) - adj.multiply(adj.T > adj)
-    adj = normalize(adj + sp.eye(adj.shape[0]))
-    adj = sparse_mx_to_torch_sparse_tensor(adj)
-
-    adj_label = adj_ori + torch.eye(adj_ori.shape[0])
-
-    pos_weight = (adj_ori.shape[0] ** 2 - adj_ori.sum()) / adj_ori.sum()
-    norm = adj_ori.shape[0] ** 2 / (2 * (adj_ori.shape[0] ** 2 - adj_ori.sum()))
-    return adj, adj_ori, adj_label, pos_weight, norm
-
-
-def Reconstruct_Ratio(pred, adj_ori):
-    adj_pred = pred.reshape(-1)
-    adj_pred = (sigmoid(adj_pred) > 0.5).float()
-    adj_true = (adj_ori + torch.eye(adj_ori.shape[0])).reshape(-1)
-    adj_acc = float(adj_pred.eq(adj_true).sum().item()) / adj_pred.shape[0]
-    return adj_acc
-
-def get_loaclitems(adjtensor):
-    localadjtensors = []
-    # 获得所有的局部组合
-    for k in range(len(adjtensor) - 1):
-        for kk in range(k + 1, len(adjtensor)):
-            localadjtensor = []
-            localadjtensor.append(adjtensor[k])
-            localadjtensor.append(adjtensor[kk])
-            localadjtensors.append(localadjtensor)
-    return localadjtensors
 
 def load_adjs(path="../data/cora/", dataset="cora"):
 
@@ -152,10 +115,8 @@ def load_adjs(path="../data/cora/", dataset="cora",r=0):
                                         dtype=np.int32)
         feature_edges = featuregraph_path
         fedges = np.array(list(feature_edges), dtype=np.int32).reshape(feature_edges.shape)
-        # fedges经验证是等同于feature_edges
         fadj = sp.coo_matrix((np.ones(fedges.shape[0]), (fedges[:, 0], fedges[:, 1])), shape=(len(labels), len(labels)),
                              dtype=np.float32)
-        # 创建稀疏矩阵
         fadj = fadj + fadj.T.multiply(fadj.T > fadj) - fadj.multiply(fadj.T > fadj)
         adj = normalize(fadj + sp.eye(fadj.shape[0]))
         # nfadj = sparse_mx_to_torch_sparse_tensor(nfadj)
@@ -206,135 +167,6 @@ def load_adjs(path="../data/cora/", dataset="cora",r=0):
 
     return adj.tocsr()
 
-
-# def load_data(path="../data/cora/", dataset="cora", labelRatio = "1"):
-#     """
-#     ind.[:dataset].x     => the feature vectors of the training instances (scipy.sparse.csr.csr_matrix)
-#     ind.[:dataset].y     => the one-hot labels of the labeled training instances (numpy.ndarray)
-#     ind.[:dataset].allx  => the feature vectors of both labeled and unlabeled training instances (csr_matrix)
-#     ind.[:dataset].ally  => the labels for instances in ind.dataset_str.allx (numpy.ndarray)
-#     ind.[:dataset].graph => the dict in the format {index: [index of neighbor nodes]} (collections.defaultdict)
-#
-#     ind.[:dataset].tx => the feature vectors of the test instances (scipy.sparse.csr.csr_matrix)
-#     ind.[:dataset].ty => the one-hot labels of the test instances (numpy.ndarray)
-#
-#     ind.[:dataset].test.index => indices of test instances in graph, for the inductive setting
-#     """
-#     # print("\n[STEP 1]: Upload {} dataset.".format(dataset))
-#
-#     names = ['x', 'y', 'tx', 'ty', 'allx', 'ally', 'graph']
-#     objects = []
-#
-#     for i in range(len(names)):
-#         with open("../data/ind.{}.{}".format(dataset, names[i]), 'rb') as f:
-#             if sys.version_info > (3, 0):
-#                 objects.append(pkl.load(f, encoding='latin1'))
-#             else:
-#                 objects.append(pkl.load(f))
-#
-#     x, y, tx, ty, allx, ally, graph = tuple(objects)
-#
-#     test_idx_reorder = parse_index_file("../data/ind.{}.test.index".format(dataset))
-#     test_idx_range = np.sort(test_idx_reorder)
-#     empetySet = []
-#     if dataset == 'citeseer':
-#         #Citeseer dataset contains some isolated nodes in the graph
-#         test_idx_range_full = range(min(test_idx_reorder), max(test_idx_reorder)+1)
-#         # 找到离群点
-#         # test_idx_range_reorder = list(test_idx_range_full)
-#         # empetySet = set(test_idx_range_reorder).difference(set(test_idx_range))
-#
-#         tx_extended = sp.lil_matrix((len(test_idx_range_full), x.shape[1]))
-#         tx_extended[test_idx_range-min(test_idx_range), :] = tx
-#         tx = tx_extended
-#
-#         ty_extended = np.zeros((len(test_idx_range_full), y.shape[1]))
-#         ty_extended[test_idx_range-min(test_idx_range), :] = ty
-#         ty = ty_extended
-#
-#     features = sp.vstack((allx, tx)).tolil()
-#     features[test_idx_reorder, :] = features[test_idx_range, :]
-#
-#     features = normalize(features)
-#
-#     features = torch.FloatTensor(np.array(features.todense()))
-#
-#     labels = np.vstack((ally, ty))
-#     labels[test_idx_reorder, :] = labels[test_idx_range, :]
-#
-#     no_class = set(np.where(labels)[1])
-#
-#     def missing_elements(L):
-#         start, end = L[0], L[-1]
-#         return sorted(set(range(start, end+1)).difference(L))
-#
-#
-#     if dataset == 'citeseer':
-#         save_label = np.where(labels)[1]
-#         L = np.sort(test_idx_reorder)
-#         missing = missing_elements(L)
-#
-#         for element in missing:
-#             save_label = np.insert(save_label, element, 0)
-#
-#         labels = torch.LongTensor(save_label)
-#     else:
-#         labels = torch.LongTensor(np.where(labels)[1])
-#
-#
-#
-#     idx = np.arange(len(labels))
-#     # 去掉离群点15个
-#     idx = list(set(idx).difference(empetySet))
-#
-#     labels[idx] = labels[idx]
-#
-#
-#
-#     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-#     np.random.shuffle(idx)
-#
-#     # print(idx)
-#
-#     train_size = math.ceil(len(labels) * int(labelRatio) / 100 / len(no_class))
-#     #print(math.ceil(len(labels) * labelRatio / 100 / len(no_class)))
-#
-#     train_size = [train_size for i in range(len(no_class))]
-#
-#     idx_train = []
-#     count = [0 for i in range(len(no_class))]
-#     label_each_class = train_size
-#     next = 0
-#
-#
-#     for i in idx:
-#         if count == label_each_class:
-#             break
-#         next += 1
-#         for j in range(len(no_class)):
-#
-#             if j== labels[i] and count[j] < label_each_class[j]:
-#                 idx_train.append(i)
-#                 count[j] += 1
-#
-#     idx_val = idx[next:next + 500]
-#     test_size = len(test_idx_range.tolist())
-#     idx_test = idx[-test_size:] if test_size else idx[next:]
-#
-#
-#     idx_unlabel = list(set(idx).difference(set(idx_train)))
-#
-#     # print(len(idx_unlabel))
-#
-#     # idx_train = range(len(y))
-#     # idx_val = range(len(y), len(y)+500)
-#     # idx_test = test_idx_range.tolist()
-#
-#
-#
-#     # idx_train, idx_val, idx_test, idx_unlabel = list(map(lambda x: torch.LongTensor(x), [idx_train, idx_val, idx_test,idx_unlabel]))
-#     return features, labels, idx_train, idx_val, idx_test,idx_unlabel
-
 def load_data(path="./data/cora/", dataset="cora"):
     """Load citation network dataset (cora only for now)"""
     print('Loading {} dataset...'.format(dataset))
@@ -381,7 +213,6 @@ def load_data_geometric(features,labels,lr = 1):
     no_class = set(labels.numpy())
 
     idx = np.arange(len(labels))
-    # 去掉离群点15个
     empetySet = []
     idx = list(set(idx).difference(empetySet))
 
@@ -480,7 +311,6 @@ def load_data3(path="../data/cora/", dataset="cora", lr = "1"):
 
         no_class = set(labels)
         idx = np.arange(len(labels))
-        # 去掉离群点15个
         empetySet=[]
         idx = list(set(idx).difference(empetySet))
 
@@ -542,7 +372,6 @@ def load_data3(path="../data/cora/", dataset="cora", lr = "1"):
         labels = torch.FloatTensor(labels)
         np.random.shuffle(idx)
         idx = np.arange(len(labels))
-        # 去掉离群点15个
         empetySet = []
         idx = list(set(idx).difference(empetySet))
 
@@ -611,7 +440,6 @@ def load_data3(path="../data/cora/", dataset="cora", lr = "1"):
         if dataset == 'citeseer':
             #Citeseer dataset contains some isolated nodes in the graph
             test_idx_range_full = range(min(test_idx_reorder), max(test_idx_reorder)+1)
-            # 找到离群点
             # test_idx_range_reorder = list(test_idx_range_full)
             # empetySet = set(test_idx_range_reorder).difference(set(test_idx_range))
 
@@ -716,46 +544,6 @@ def normalize_adj(mx):
     r_mat_inv_sqrt = sp.diags(r_inv_sqrt)
 
     return mx.dot(r_mat_inv_sqrt).transpose().dot(r_mat_inv_sqrt).tocoo()
-
-# def load_data(path="../data/cora/", dataset="cora"):
-#     """Load citation network dataset (cora only for now)"""
-#     print('Loading {} dataset...'.format(dataset))
-#
-#     idx_features_labels = np.genfromtxt("{}{}.content".format(path, dataset),
-#                                         dtype=np.dtype(str))
-#     features = sp.csr_matrix(idx_features_labels[:, 1:-1], dtype=np.float32)
-#     labels = encode_onehot(idx_features_labels[:, -1])
-#
-#     # build graph
-#     idx = np.array(idx_features_labels[:, 0], dtype=np.int32)
-#     idx_map = {j: i for i, j in enumerate(idx)}
-#     edges_unordered = np.genfromtxt("{}{}.cites".format(path, dataset),
-#                                     dtype=np.int32)
-#     edges = np.array(list(map(idx_map.get, edges_unordered.flatten())),
-#                      dtype=np.int32).reshape(edges_unordered.shape)
-#     adj = sp.coo_matrix((np.ones(edges.shape[0]), (edges[:, 0], edges[:, 1])),
-#                         shape=(labels.shape[0], labels.shape[0]),
-#                         dtype=np.float32)
-#
-#     # build symmetric adjacency matrix
-#     adj = adj + adj.T.multiply(adj.T > adj) - adj.multiply(adj.T > adj)
-#
-#     features = normalize(features)
-#     adj = normalize(adj + sp.eye(adj.shape[0]))
-#
-#     idx_train = range(140)
-#     idx_val = range(200, 500)
-#     idx_test = range(500, 1500)
-#
-#     features = torch.FloatTensor(np.array(features.todense()))
-#     labels = torch.LongTensor(np.where(labels)[1])
-#     adj = sparse_mx_to_torch_sparse_tensor(adj)
-#
-#     idx_train = torch.LongTensor(idx_train)
-#     idx_val = torch.LongTensor(idx_val)
-#     idx_test = torch.LongTensor(idx_test)
-#
-#     return adj, features, labels, idx_train, idx_val, idx_test
 
 
 def normalize(mx):
