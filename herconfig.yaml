@@ -1,0 +1,8 @@
+NUS-WIDE:
+  seed: 39788
+  learning_rate: 0.01
+  K: 15
+  num_hidden: 160
+  num_epochs: 2000
+  weight_decay: 0.00001
+  ratio: 0.2 #0.2
